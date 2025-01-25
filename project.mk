@@ -11,10 +11,10 @@ PADVALUE := 0xFF
 VERSION := 0
 
 # 4-ASCII letter game ID.
-GAMEID := BOIL
+GAMEID := PRNT
 
 # Game title, up to 11 ASCII chars.
-TITLE := BOILERPLATE
+TITLE := PRINTER
 
 # New licensee, 2 ASCII chars.
 # Homebrew games FTW!.
@@ -36,7 +36,7 @@ MBC := 0x00
 SRAMSIZE := 0x00
 
 # ROM name.
-ROMNAME := boilerplate
+ROMNAME := printer
 ROMEXT  := gb
 
 
@@ -64,4 +64,4 @@ ROMEXT  := gb
 # LDFLAGS += -w
 
 # 32k mode.
-# LDFLAGS += -t
+LDFLAGS += -t

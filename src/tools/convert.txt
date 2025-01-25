@@ -1,0 +1,1 @@
+py -3 pilbmp2nes.py --planes=0,1 .\printer_nova.png out.chr

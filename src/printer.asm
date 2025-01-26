@@ -2,6 +2,7 @@ INCLUDE "hardware.inc"
 
 SECTION "Printing", ROM0
 
+; Send one byte over the serial port, and add it to DE
 SendSerialByte:
 	ldh [rSB], a
 
@@ -12,6 +13,7 @@ SendSerialByte:
 		inc d
 	:
 
+	; Start transfer and wait for it to finish
 	ld a, SCF_START|SCF_SOURCE
 	ldh [rSC], a
 :	ldh a, [rSC]
@@ -21,19 +23,20 @@ SendSerialByte:
 
 ; ---------------------------------------------------------
 
-; A = Command
+; A  = Command
 ; BC = Data length
 ; HL = Data pointer
-; Output: B = Keepalive, C = Status
+; Output: PrinterReady, PrinterStatus
+SendPrinterPacketNoData::
+	ld bc, 0
 SendPrinterPacket::
 	push af
 	ld a, $88
-	call SendSerialByte ; Magic
+	call SendSerialByte ; Magic byte to identify printer command
 	ld a, $33
-	call SendSerialByte ; Magic
+	call SendSerialByte ; Magic byte to identify printer command
 	pop af
-	ld d, 0
-	ld e, 0
+	ld de, 0 ; Reset the checksum
 	call SendSerialByte ; Command
 	xor a
 	call SendSerialByte ; No compression
@@ -43,9 +46,10 @@ SendPrinterPacket::
 	ld a, b
 	call SendSerialByte ; Length (high)
 
+	; Transfer all of the data, if there is actually any to send
 	ld a, b
 	or c
-	jr z, .noTransfer
+	jr z, .noTransfer ; No data to send?
 .transfer:
 	ld a, [hl+]
 	call SendSerialByte
@@ -55,6 +59,7 @@ SendPrinterPacket::
 	jr nz, .transfer
 .noTransfer:
 
+	; Send the checksum of the stuff so far
 	ld b, d
 	ld a, e
 	call SendSerialByte ; Checksum (low)
@@ -65,19 +70,19 @@ SendPrinterPacket::
 	xor a
 	call SendSerialByte
 	ldh a, [rSB]
-	ldh [PrinterStatus1], a
+	ldh [PrinterReady], a
 
 	; Get status
 	xor a
 	call SendSerialByte
 	ldh a, [rSB]
-	ldh [PrinterStatus2], a
+	ldh [PrinterStatus], a
 	ret
 
 ; ---------------------------------------------------------
 
-; HL = image
-; BC = size
+; HL = Image to print
+; BC = Size of the image, in bytes
 PrintLargeImage::
 	; Initial configuration
 	ld a, l
@@ -89,22 +94,25 @@ PrintLargeImage::
 	ld a, b
 	ldh [ImageBytesLeft+1], a
 
+	; First print should have a margin of 1 at the top
 	ld a, $10
 	ldh [PrintSettingsMargins], a
 
 .transfer:
-	ld a, $f
+	; First, check if the printer is even active and ready to accept a command
+	ld a, $f ; no operation
 	ld bc, 0
 	call SendPrinterPacket
 	call WaitVblank
-	ldh a, [PrinterStatus1]
+	ldh a, [PrinterReady]
 	cp $81
 	jr nz, .transfer
 
-	ld a, 1 ; Initialize printer
-	ld bc, 0
-	call SendPrinterPacket
+	; Initialize printer buffer
+	ld a, 1
+	call SendPrinterPacketNoData
 
+	; Try to send as many bytes as possible
 	ldh a, [ImageBytesLeft+0]
 	ld c, a
 	ldh a, [ImageBytesLeft+1]
@@ -119,7 +127,7 @@ PrintLargeImage::
 	sbc b
 	ldh [ImageBytesLeft+1], a
 
-	; Get pointer and move it forward
+	; Get pointer and also move it forward
 	ldh a, [ImagePointer+0]
 	ld l, a
 	add c
@@ -128,20 +136,20 @@ PrintLargeImage::
 	ld h, a
 	adc b
 	ldh [ImagePointer+1], a
-	ld b,b
 
+	; Command 4 = fill buffer
 	ld a, 4
 	call SendPrinterPacket
 
-	ld a, 4 ; Send empty print command
-	ld bc, 0
-	call SendPrinterPacket
+	; Need to do command 4 again with no data or print will be ignored
+	ld a, 4
+	call SendPrinterPacketNoData
 
-	; Last one should have some margin on the bottom
-	ld a, [PrintSettingsMargins]
+	; If this is the very last print, put some extra margin on the bottom
+	ldh a, [PrintSettingsMargins] ; Don't put margin on the bottom if it's the first print and there's margin on the top
 	or a
 	jr nz, :+
-		ldh a, [ImageBytesLeft+0]
+		ldh a, [ImageBytesLeft+0] ; If this is the last print, there will be no bytes left to send
 		ld b, a
 		ldh a, [ImageBytesLeft+1]
 		or b
@@ -150,84 +158,40 @@ PrintLargeImage::
 			ldh [PrintSettingsMargins], a
 	:
 
-	ld a, 2 ; Start printing
+	; Send a command to start printing
+	ld a, 2
 	ld bc, 4
-	ld hl, PrintSettingsSheets
+	ld hl, PrintSettingsSheets ; Print settings
 	call SendPrinterPacket
 
-:	ldh a, [rSTAT]
-	and STATF_BUSY
-	jr nz, :-
-	ld a, "?"
-	ld [_SCRN0 + 32 + 8], a
-
-.waitWhilePrinting:
-	ld a, $f
-	ld bc, 0
-	call SendPrinterPacket
+	; Wait for printer to start printing
+:	ld a, $f
+	call SendPrinterPacketNoData
 	call WaitVblank
-	ldh a, [PrinterStatus2]
+	ldh a, [PrinterStatus]
 	cp 6
-	jr nz, .waitWhilePrinting
-
-:	ldh a, [rSTAT]
-	and STATF_BUSY
 	jr nz, :-
-	ld a, "!"
-	ld [_SCRN0 + 32 + 8], a
 
-.waitWhilePrinting2:
-	ld a, $f
-	ld bc, 0
-	call SendPrinterPacket
+	; Wait for printer to stop printing
+:	ld a, $f
+	call SendPrinterPacketNoData
 	call WaitVblank
-	ldh a, [PrinterStatus2]
+	ldh a, [PrinterStatus]
 	cp 4
-	jr nz, .waitWhilePrinting2
-
-:	ldh a, [rSTAT]
-	and STATF_BUSY
 	jr nz, :-
-	ld a, " "
-	ld [_SCRN0 + 32 + 8], a
 
-	xor a
+	; "Send 16 zero bytes to clear the printer’s receive buffer" as Game Boy Camera does
+	ld b, 16
+:	xor a
 	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
-	xor a
-	call SendSerialByte
+	dec b
+	jr nz, :-
 
+	; Only put a margin above the very first print, so remove the margin for prints after that
 	xor a
 	ld [PrintSettingsMargins], a
 
-	; Keep going?
+	; If there's still bytes left to send, start another print
 	ldh a, [ImageBytesLeft+0]
 	ld c, a
 	ldh a, [ImageBytesLeft+1]
@@ -235,6 +199,8 @@ PrintLargeImage::
 	jp nz, .transfer
 	ret
 
+; BC = min(BC, $280)
+; Printer command 4 maxes out at $280 bytes per command, which is 40 tiles worth of data (two rows on the screen)
 LimitTo0x280:
 	ld a, b
 	cp 3
@@ -247,6 +213,3 @@ LimitTo0x280:
 .applyLimit:
 	ld bc, $280
 	ret
-
-; ---------------------------------------------------------
-

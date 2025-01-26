@@ -16,20 +16,18 @@ KeyDown:: ds 1
 KeyLast:: ds 1
 KeyNew::  ds 1
 
-PrintedRows:: ds 1
-
 ImagePointer:: ds 2
 ImageBytesLeft:: ds 2
 
-ImageScreenBytes:: ds 2
-
+; Print settings
 PrintSettingsSheets:: ds 1
 PrintSettingsMargins:: ds 1
 PrintSettingsPalette:: ds 1
 PrintSettingsExposure:: ds 1
 
-PrinterStatus1:: ds 1
-PrinterStatus2:: ds 1
+; Printer status
+PrinterReady::  ds 1
+PrinterStatus:: ds 1
 
 SECTION "OAM Data", WRAM0, ALIGN[8]
 OamBuffer::

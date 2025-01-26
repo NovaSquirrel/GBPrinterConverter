@@ -163,26 +163,9 @@ PutHex:
 
 vblank::
   push af
-  push bc
-  push de
-  push hl
-  ld a, [framecount]
+  ldh a, [framecount]
   inc a
-  ld [framecount], a
-
-  ld hl, _SCRN0 + 32
-  ldh a, [PrinterStatus1]
-  call PutHex
-  inc hl
-  ldh a, [PrinterStatus2]
-  call PutHex
-  inc hl
-  ld a, [framecount]
-  call PutHex
-
-  pop hl
-  pop de
-  pop bc
+  ldh [framecount], a
   pop af
   reti
 

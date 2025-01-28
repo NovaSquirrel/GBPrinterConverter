@@ -104,9 +104,20 @@ PrintLargeImage::
 	ld bc, 0
 	call SendPrinterPacket
 	call WaitVblank
-	ldh a, [PrinterReady]
+	; Allow exiting by holding B
+	call ReadKeys
+	ldh a, [KeyDown]
+	and PADF_B
+	ret nz
+	; Check printer status
+	ldh a, [PrinterReady]  ; Printer is on and can communicate
 	cp $81
 	jr nz, .transfer
+	ldh a, [PrinterStatus] ; If there are errors, abort
+	or a
+	ret nz
+
+	; -------------------------------------------
 
 	; Initialize printer buffer
 	ld a, 1
@@ -168,6 +179,12 @@ PrintLargeImage::
 :	ld a, $f
 	call SendPrinterPacketNoData
 	call WaitVblank
+	; Allow exiting by holding B
+	call ReadKeys
+	ldh a, [KeyDown]
+	and PADF_B
+	ret nz
+	; Check the status
 	ldh a, [PrinterStatus]
 	cp 6
 	jr nz, :-
@@ -176,6 +193,12 @@ PrintLargeImage::
 :	ld a, $f
 	call SendPrinterPacketNoData
 	call WaitVblank
+	; Allow exiting by holding B
+	call ReadKeys
+	ldh a, [KeyDown]
+	and PADF_B
+	ret nz
+	; Check the status
 	ldh a, [PrinterStatus]
 	cp 4
 	jr nz, :-

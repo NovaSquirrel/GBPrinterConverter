@@ -29,6 +29,9 @@ PrintSettingsExposure:: ds 1
 PrinterReady::  ds 1
 PrinterStatus:: ds 1
 
+; Menu
+CurrentMenuImage:: ds 1
+
 SECTION "OAM Data", WRAM0, ALIGN[8]
 OamBuffer::
 	ds 256

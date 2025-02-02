@@ -63,6 +63,13 @@ assets/%.pb16: src/tools/pb16.py assets/%
 	@${MKDIR_P} "${@D}"
 	$^ $@
 
+assets/%.2bpp: assets/%.png
+	@$(MKDIR_P) $(@D)
+	py -3 src/tools/pilbmp2nes.py --planes=0,1 $< $@
+
+assets/all_graphics.asm: $(wildcard assets/images/*.png) src/tools/all_graphics.py
+	py -3 src/tools/all_graphics.py
+
 # How to build a ROM.
 # Notice that the build date is always refreshed.
 bin/%.${ROMEXT}: $(patsubst src/%.asm,obj/%.o,${SRCS})

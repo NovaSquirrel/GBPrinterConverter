@@ -37,6 +37,13 @@ ENDM
 SECTION "vblank", ROM0[$0040]
 	jp vblank
 
+SECTION "stat", ROM0[$0048]
+	push af
+	ld a, LCDCF_ON|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON|LCDCF_BG8800|LCDCF_OBJ8
+	ldh [rLCDC],a
+	pop af
+	reti
+
 SECTION "Header", ROM0[$100]
 
 	; This is your ROM's entry point
@@ -56,7 +63,6 @@ SECTION "Entry point", ROM0
 
 EntryPoint:
 	ld sp, $E000
-	ld b,b
 
 	; Disable audio
 	xor a
@@ -105,36 +111,94 @@ EntryPoint:
 	ldh [rOBP1], a
 
 	; -----------------------------------------
-	ld a, LCDCF_ON|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON|LCDCF_BG8800|LCDCF_OBJ8
-	ldh [rLCDC],a
 
-
-	ld a, 1
-	ldh [PrintSettingsSheets], a
-	ld a, $E4
-	ldh [PrintSettingsPalette], a
-	ld a, $40
-	ldh [PrintSettingsExposure], a
-
-	ld hl, PrintedImage
-	ld bc, PrintedImage_End - PrintedImage
-	call PrintLargeImage
+	xor a
+	ldh [CurrentMenuImage], a
+	call DisplayImageOnScreen
 
 Main:
 	call WaitVblank
-	ld a, "T"
-	ld [_SCRN0], a
-	ld a, "E"
-	ld [_SCRN0+1], a
-	ld a, "S"
-	ld [_SCRN0+2], a
-	ld a, "T"
-	ld [_SCRN0+3], a
 
 	ld a, OamBuffer>>8
 	call RunOamDMA
 
 	call ReadKeys
+
+	ldh a, [KeyNew]
+	and PADF_LEFT
+	jr z, .NotLeft
+		ldh a, [CurrentMenuImage]
+		dec a
+		ldh [CurrentMenuImage], a
+
+		cp $ff
+		jr nz, :+
+			ld a, [FileCount]
+			dec a
+			ldh [CurrentMenuImage], a
+		:
+		call DisplayImageOnScreen
+	.NotLeft:
+
+	ldh a, [KeyNew]
+	and PADF_RIGHT
+	jr z, .NotRight
+		ldh a, [CurrentMenuImage]
+		inc a
+		ldh [CurrentMenuImage], a
+		ld b, a
+
+		ld a, [FileCount]
+		cp b
+		jr nz, :+
+			xor a
+			ldh [CurrentMenuImage], a
+		:
+		call DisplayImageOnScreen
+	.NotRight:
+
+	ldh a, [KeyNew]
+	and PADF_A
+	jr z, .NotPrint
+		ldh a, [CurrentMenuImage]
+		ld l, a
+		ld h, 0
+		add hl, hl ; * 2
+		add hl, hl ; * 4
+		add_hl_a
+
+		ld de, FileDirectory
+		add hl, de
+		ld a, [hl+]
+		ldh [temp1], a ; File pointer L
+		ld a, [hl+]
+		ldh [temp2], a ; File pointer H
+		ld a, [hl+]
+		ld [rROMB0], a ; Bank
+		ld a, [hl+]
+		ld c, a        ; Size L
+		ld a, [hl+]
+		ld b, a        ; Size H
+
+		ld a, 1
+		ldh [PrintSettingsSheets], a
+		ld a, $E4
+		ldh [PrintSettingsPalette], a
+		ld a, $40
+		ldh [PrintSettingsExposure], a
+
+		ld a, %00011011
+		ldh [rBGP], a
+
+		ldh a, [temp1]
+		ld l, a
+		ldh a, [temp2]
+		ld h, a
+		call PrintLargeImage
+
+		ld a, %11100100
+		ldh [rBGP], a
+	.NotPrint:
 
 	call ClearOAM
 	xor a
@@ -162,12 +226,92 @@ PutHex:
 	db "0123456789ABCDEF"
 
 vblank::
-  push af
-  ldh a, [framecount]
-  inc a
-  ldh [framecount], a
-  pop af
-  reti
+	push af
+	ldh a, [framecount]
+	inc a
+	ldh [framecount], a
+
+	ld a, LCDCF_ON|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON|LCDCF_BG8000|LCDCF_OBJ8
+	ldh [rLCDC],a
+	pop af
+	reti
+
+
+DisplayImageOnScreen:
+	call ScreenOff
+
+	; Clear VRAM
+	ld hl, _VRAM8000
+	ld bc, 20*18*16
+	call memclear
+
+	; Initialize tilemap
+	ld hl, _SCRN0
+	ld de, 32-20
+	xor a
+	ld c, 18
+.new_row:
+	ld b, 20
+:	ld [hl+], a
+	inc a
+	dec b
+	jr nz, :-
+	add hl, de
+	dec c
+	jr nz, .new_row
+
+	ldh a, [CurrentMenuImage]
+	ld l, a
+	ld h, 0
+	add hl, hl ; * 2
+	add hl, hl ; * 4
+	add_hl_a
+
+	ld de, FileDirectory
+	add hl, de
+	ld a, [hl+]
+	ldh [temp1], a ; File pointer L
+	ld a, [hl+]
+	ldh [temp2], a ; File pointer H
+	ld a, [hl+]
+	ldh [temp3], a ; Bank
+	ld a, [hl+]
+	ld c, a
+	ldh [temp4], a ; File size L
+	ld a, [hl+]
+	ld b, a
+	ldh [temp5], a ; File size H
+
+	; Switch in the bank with the file
+	ldh a, [temp3]
+	ld [rROMB0], a
+
+	; Limit it to only copying over 1 screen of tiles
+	ld a, b
+	cp HIGH(20*19*16)
+	jr c, :+
+		ld bc, 20*18*16
+	:
+
+	; Copy over graphics
+	ldh a, [temp1]
+	ld l, a
+	ldh a, [temp2]
+	ld h, a
+	ld de, _VRAM8000
+	call memcpy
+
+	; Interrupt at the bottom of the screen
+	ld a, 11*8
+	ldh [rLYC], a
+	ld a, STATF_LYC
+	ldh [rSTAT], a
+
+	; Turn the screen on
+	ld a, LCDCF_ON|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_BGON|LCDCF_BG8000|LCDCF_OBJ8
+	ldh [rLCDC],a
+	ret
+
 
 SECTION "Graphics", ROM0
 
@@ -196,7 +340,3 @@ SpritesGfxEnd:
 BackgroundGfx:
 	incbin "font.chr"
 BackgroundGfxEnd:
-
-PrintedImage::
-	incbin "print_me.chr"
-PrintedImage_End::

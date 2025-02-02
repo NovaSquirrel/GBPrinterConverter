@@ -1,16 +1,22 @@
+
 INCLUDE "hardware.inc"
 
 SECTION "Misc", ROM0
 
 memcpy::
-  ld a, [hl+]
-  ld [de], a
-  inc de
-  dec bc
-  ld a, b 
-  or c
-  jr nz, memcpy
-  ret
+    ; Increment B if C is non-zero
+    dec bc
+    inc b
+    inc c
+.loop
+    ld a, [hl+]
+    ld [de], a
+    inc de
+    dec c
+    jr nz, .loop
+    dec b
+    jr nz, .loop
+    ret
 
 memcpy8::
   ld a, [hl+]
@@ -21,15 +27,27 @@ memcpy8::
   ret
 
 memclear::
-  xor a
-  ld [hl+], a
-  dec bc
-  ld a,b
-  or c
-  jr nz, memclear
-  ret
+	xor a
+memset::
+    ; Increment B if C is non-zero
+    dec bc
+    inc b
+    inc c
+.loop
+    ld [hl+], a
+    inc de
+    dec c
+    jr nz, .loop
+    dec b
+    jr nz, .loop
+	ret
 
 ScreenOff::
+  ; Is the screen already off?
+  ldh a,[rLCDC]
+  add a
+  ret nc
+
   call WaitVblank
   xor a
   ldh [rLCDC], a
@@ -41,21 +59,21 @@ ScreenOn::
   ret
 
 WaitVblank::
-  push hl
-  push af
-  ld a, %00011
-  ldh [rIE],a     ; Enable vblank interrupt
-  ei
+	push hl
+	push af
+	ld a, IEF_VBLANK|IEF_STAT
+	ldh [rIE],a     ; Enable vblank interrupt
+	ei
 
-  ld   hl, framecount
-  ld   a, [hl]
+	ld   hl, framecount
+	ld   a, [hl]
 .loop:
-  halt
-  cp   a, [hl]
-  jr   z, .loop
-  pop af
-  pop hl
-  ret
+	halt
+	cp   a, [hl]
+	jr   z, .loop
+	pop af
+	pop hl
+	ret
 
 ReadKeys::
   ldh a, [KeyDown]

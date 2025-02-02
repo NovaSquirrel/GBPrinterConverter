@@ -26,7 +26,7 @@ OLDLIC := 0x33
 # You can get a list of valid values by running `rgbfix -m help`.
 # See https://gbdev.io/pandocs/MBCs for more information, or consult any copy of Pan Docs.
 # If using no MBC, consider enabling `-t` below.
-MBC := 0x00
+MBC := 0x19
 
 # ROM size is set automatically by RGBFIX.
 
@@ -64,4 +64,4 @@ ROMEXT  := gb
 # LDFLAGS += -w
 
 # 32k mode.
-LDFLAGS += -t
+# LDFLAGS += -t

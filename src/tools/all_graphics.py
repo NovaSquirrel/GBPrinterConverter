@@ -1,5 +1,6 @@
 import glob, os
 
+os.makedirs("assets", exist_ok=True)
 outfile = open("assets/all_graphics.asm", "w")
 
 file_count = 0
